@@ -1,37 +1,53 @@
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.firefox.service import Service
 from webdriver_manager.firefox import GeckoDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 import time
+import json
 import random
 
 
 service = Service(GeckoDriverManager().install())
 driver = webdriver.Firefox(service=service)
 
-try:
-    url = "https://www.avito.ru" # Пример URL
-    driver.get(url)
-    time.sleep(random.uniform(2, 5)) # Случайная задержка
 
-    # Ждем загрузки элементов (замените селектор на актуальный)
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "[data-marker='item']"))
-    )
+def parce_meduza():
+    options = Options()
+    options.add_argument("--headless")  # Фоновый режим
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+
+    try:
+        print('Окрываем медузу')
+        driver.get('https://meduza.io/')
+        time.sleep(5)
+        titles = driver.find_elements(By.CSS_SELECTOR, "h2 a.Link-module-root")
+        
+        news = []
+        for title_elem in titles[:10]:
+            title = title_elem.text.strip()
+            href = title_elem.get_attribute("href")
+            if title:
+                news.append({"title": title, "url": href})
+                print(f"✅ {title}")
+        
+        return news
+        
+    except Exception as e:
+        print(f"❌ Ошибка: {e}")
+        return []
+    finally:
+        driver.quit()
+
+if __name__ == "__main__":
+    news = parce_meduza()
+    with open("meduza_news.json", "w", encoding="utf-8") as f:
+        json.dump(news, f, ensure_ascii=False, indent=2)
     
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
-    items = soup.select("[data-marker='item']")
-
-    for item in items:
-        # Извлечение данных (название, цена, ссылка) — пример
-        title_elem = item.select_one("[itemprop='name']")
-        price_elem = item.select_one("[itemprop='price']")
-        # ... и так далее
-        print(title_elem.text.strip() if title_elem else "Нет названия")
-
-finally:
-    driver.quit()
+    print(f"✅ Сохранено {len(news)} новостей")
