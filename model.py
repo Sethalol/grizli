@@ -1,13 +1,14 @@
 import os
+import httpx
 from openai import OpenAI
 
 import psycopg2
 
 client = OpenAI(
-    api_key=os.environ.get("OPENROUTER_API_KEY",'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'),
+    api_key=os.environ.get("OPENROUTER_API_KEY"),
     base_url='https://openrouter.ai/api/v1'
 )
-MODEL_NAME = "google/gemini-3.6-flash"
+MODEL_NAME = "openrouter/free"
 with open("instruction", encoding='utf-8') as f:
     INSTRUCTION = f.read()
 DB_CONFIG = {
@@ -18,8 +19,6 @@ DB_CONFIG = {
 }
 TOPIC_VALUE = 'mobilization'
 
-
-
 def check_title(title: str) -> bool:
     response = client.chat.completions.create(
         model = MODEL_NAME,
@@ -27,9 +26,14 @@ def check_title(title: str) -> bool:
             {"role": "system", "content": INSTRUCTION},
             {'role': 'system', 'content': title}
         ],
-        max_tokens=10,
-        temperature=0
+        max_tokens=40,
+        temperature=0,
+        extra_body={'reasoning': {"enabled": False}}
     )
+    content = response.choices[0].message.content
+
+    if content is None:
+        return False
     answer = response.choices[0].message.content.strip().lower()
     return answer.startswith('true')
 
@@ -45,6 +49,8 @@ def main():
                 FROM articles a
                 LEFT JOIN news n ON n.article_id = a.id
                 WHERE n.id IS NULL
+                ORDER BY a.id DESC
+                LIMIT 10
                 """
 
             )
