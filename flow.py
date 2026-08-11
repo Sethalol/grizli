@@ -33,12 +33,12 @@ default_args = {
 with DAG(
     dag_id= "meduza_mobilization_pipeline",
     description="Парсинг медузы",
-    schedule="",
-    start_date=pendulum.datetime(2026, 8, 11, tz=LOCAL_TZ)
+    schedule="10 13 * * *",
+    start_date=pendulum.datetime(2026, 8, 11, tz=LOCAL_TZ),
     catchup=False,
     default_args=default_args,
-    tags=['meduza', 'mobilization']
-) as dag:
+    tags=['meduza', 'mobilization'],
+    ) as dag:
 
     parse_meduza=BashOperator(
         task_id="parse_meduza",
