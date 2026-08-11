@@ -14,7 +14,7 @@ parse_meduza → load_bd → run_model → notify_bot
 |---|---|---|
 | `parse_meduza` | `parcer.py` | Открывает Медузу через Selenium (Firefox + `webdriver_manager`), собирает свежие заголовки/ссылки, сохраняет в `meduza_news.json` |
 | `load_bd` | `bd_load.py` | Читает `meduza_news.json`, апсертит статьи в таблицу `articles` (Postgres, конфликт по `url`) |
-| `run_model` | `model.py` | Прогоняет заголовки через LLM (OpenRouter) по системному промпту из файла `instruction`, размечает тему/важность и пишет результат в таблицу `news` |
+| `run_model` | `model.py` | Прогоняет заголовки через LLM по системному промпту из файла `instruction`, размечает тему/важность и пишет результат в таблицу `news` |
 | `notify_bot` | `tgbot/idle.py` | Забирает из `news` всё с `sent = false`, шлёт в Telegram-чат, помечает отправленным |
 
 DAG: `meduza_mobilization_pipeline`, расписание `05 18 * * *` (18:05 по Europe/Moscow), `catchup=False`, 2 ретрая с интервалом 5 минут.
