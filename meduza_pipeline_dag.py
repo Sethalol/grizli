@@ -35,7 +35,7 @@ default_args = {
 with DAG(
     dag_id= "meduza_mobilization_pipeline",
     description="Парсинг медузы",
-    schedule="15 13 * * *",
+    schedule="06 17 * * *",
     start_date=pendulum.datetime(2026, 8, 11, tz=LOCAL_TZ),
     catchup=False,
     default_args=default_args,
@@ -64,7 +64,7 @@ with DAG(
     )
 
     notify_bot = BashOperator(
-        task_id="run_model",
+        task_id="notify_bot",
         bash_command=f"{PYTHON_BIN} {PROJECT_DIR}/tgbot/idle.py",
         env=ENV_BOT,
         append_env=True,
