@@ -14,7 +14,7 @@ conn = psycopg2.connect(
 
 cursor = conn.cursor()
 
-with open ('meduza_news.json', encoding='utf-8') as f:
+with open ('/home/admin/Documents/projects/grizli/meduza_news.json', encoding='utf-8') as f:
     articles = json.load(f)
 
 for a in articles:

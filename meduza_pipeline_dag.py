@@ -35,7 +35,7 @@ default_args = {
 with DAG(
     dag_id= "meduza_mobilization_pipeline",
     description="Парсинг медузы",
-    schedule="41 17 * * *",
+    schedule="05 18 * * *",
     start_date=pendulum.datetime(2026, 8, 11, tz=LOCAL_TZ),
     catchup=False,
     default_args=default_args,

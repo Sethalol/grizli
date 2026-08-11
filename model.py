@@ -1,5 +1,4 @@
 import os
-import httpx
 from openai import OpenAI
 
 import psycopg2
@@ -9,7 +8,7 @@ client = OpenAI(
     base_url='https://openrouter.ai/api/v1'
 )
 MODEL_NAME = "openrouter/free"
-with open("instruction", encoding='utf-8') as f:
+with open("/home/admin/Documents/projects/grizli/instruction", encoding='utf-8') as f:
     INSTRUCTION = f.read()
 DB_CONFIG = {
     "host": os.environ.get("DB_HOST", "localhost"),

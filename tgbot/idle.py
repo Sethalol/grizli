@@ -54,7 +54,9 @@ async def send_pending() -> None:
             conn.commit()
             sent_count += 1
             print(f"news_id={news_id} -> отправлено")
- 
+        if sent_count == 0:
+            await bot.send_message(CHAT_ID, text='Новостей по мобилизации нет!')
+
     finally:
         await bot.session.close()
         conn.close()
