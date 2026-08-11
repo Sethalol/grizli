@@ -1,7 +1,4 @@
 from datetime import timedelta
-# export AIRFLOW_VAR_BOT_TOKEN="8961935363:AAE0MLnpltYJyf0qmaYSpKvqEjdSwoYmn60
-    #    export AIRFLOW_VAR_CHAT_ID="1798291844"
-    # export OPENROUTER_API_KEY="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"
 import pendulum
 from airflow import DAG
 from airflow.models import Variable
@@ -18,13 +15,13 @@ ENV_COMMON = {
 }
 ENV_MODEL = {
     **ENV_COMMON,
-    "OPENROUTER_API_KEY": Variable.get("OPENROUTER_API_KEY", default_var="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"),
+    "OPENROUTER_API_KEY": Variable.get("OPENROUTER_API_KEY", default_var=""),
     "OPENROUTER_PROXY": Variable.get("OPENROUTER_PROXY", default_var=""),
 }
 ENV_BOT = {
     **ENV_COMMON,
-    "BOT_TOKEN": Variable.get("BOT_TOKEN", default_var="8961935363:AAE0MLnpltYJyf0qmaYSpKvqEjdSwoYmn60"),
-    "CHAT_ID": Variable.get("CHAT_ID", default_var="1798291844"),
+    "BOT_TOKEN": Variable.get("BOT_TOKEN", default_var=""),
+    "CHAT_ID": Variable.get("CHAT_ID", default_var=""),
 }
 default_args = {
     "owner": "grizli",
