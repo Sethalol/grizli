@@ -1,11 +1,13 @@
 from datetime import timedelta
-
+# export AIRFLOW_VAR_BOT_TOKEN="8961935363:AAE0MLnpltYJyf0qmaYSpKvqEjdSwoYmn60
+    #    export AIRFLOW_VAR_CHAT_ID="1798291844"
+    # export OPENROUTER_API_KEY="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"
 import pendulum
 from airflow import DAG
 from airflow.models import Variable
 from airflow.providers.standard.operators.bash import BashOperator
 
-LOCAL_TZ = pendulum.timezone("Europe/Moskow")
+LOCAL_TZ = pendulum.timezone("Europe/Moscow")
 PROJECT_DIR = "/home/admin/Documents/projects/grizli"
 PYTHON_BIN = f"{PROJECT_DIR}/venv/bin/python"
 ENV_COMMON = {
@@ -16,13 +18,13 @@ ENV_COMMON = {
 }
 ENV_MODEL = {
     **ENV_COMMON,
-    "OPENROUTER_API_KEY": Variable.get("OPENROUTER_API_KEY"),
+    "OPENROUTER_API_KEY": Variable.get("OPENROUTER_API_KEY", default_var="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"),
     "OPENROUTER_PROXY": Variable.get("OPENROUTER_PROXY", default_var=""),
 }
 ENV_BOT = {
     **ENV_COMMON,
-    "BOT_TOKEN": Variable.get("BOT_TOKEN"),
-    "CHAT_ID": Variable.get("CHAT_ID"),
+    "BOT_TOKEN": Variable.get("BOT_TOKEN", default_var="8961935363:AAE0MLnpltYJyf0qmaYSpKvqEjdSwoYmn60"),
+    "CHAT_ID": Variable.get("CHAT_ID", default_var="1798291844"),
 }
 default_args = {
     "owner": "grizli",
@@ -33,7 +35,7 @@ default_args = {
 with DAG(
     dag_id= "meduza_mobilization_pipeline",
     description="Парсинг медузы",
-    schedule="10 13 * * *",
+    schedule="15 13 * * *",
     start_date=pendulum.datetime(2026, 8, 11, tz=LOCAL_TZ),
     catchup=False,
     default_args=default_args,
