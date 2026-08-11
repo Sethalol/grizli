@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("news_bot")
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-# CHAT_ID = int(os.environ["CHAT_ID"])
+CHAT_ID = int(os.environ["CHAT_ID"])
 POLL_INTERVAL_SECONDS = int(15)
 STATE_FILE = os.environ.get("STATE_FILE", "news_bot_last_id.txt")
 
@@ -63,28 +63,27 @@ async def poll_news(bot: Bot, pool: asyncpg.Pool) -> None:
         save_last_id(last_id)
         logger.info("Первый запуск: стартуем с id=%s, старые записи отправлены не будут", last_id)
 
-    while True:
-        try:
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT id, article_id, title, url, topic FROM news WHERE id > $1 ORDER BY id ASC",
-                    last_id,
-                )
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, article_id, title, url, topic FROM news WHERE id > $1 ORDER BY id ASC",
+                last_id,
+            )
+        if len(rows)<1:
+            await bot.send_message(text='Новостей по мобилизации нет', chat_id=CHAT_ID)
+        for row in rows:
+            try:
+                await bot.send_message(format_message(row))
+                last_id = row["id"]
+                save_last_id(last_id)
+                logger.info("Отправлено id=%s: %s", row["id"], row["title"])
+            except Exception as e:
+                logger.error("Не удалось отправить id=%s: %r", row["id"], e)
+                break  # прервёмся, повторим попытку с этого же id на следующем цикле
 
-            for row in rows:
-                try:
-                    await bot.send_message(format_message(row))
-                    last_id = row["id"]
-                    save_last_id(last_id)
-                    logger.info("Отправлено id=%s: %s", row["id"], row["title"])
-                except Exception as e:
-                    logger.error("Не удалось отправить id=%s: %r", row["id"], e)
-                    break  # прервёмся, повторим попытку с этого же id на следующем цикле
-
-        except Exception as e:
-            logger.error("Ошибка при опросе БД: %r", e)
-
-        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+    except Exception as e:
+        logger.error("Ошибка при опросе БД: %r", e)
+    await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
 async def main() -> None:
