@@ -9,7 +9,7 @@ from airflow.providers.standard.operators.bash import BashOperator
 
 LOCAL_TZ = pendulum.timezone("Europe/Moscow")
 PROJECT_DIR = "/home/admin/Documents/projects/grizli"
-PYTHON_BIN = f"{PROJECT_DIR}/venv/bin/python"
+PYTHON_BIN = f"/home/admin/Documents/projects/venv/bin/python3"
 ENV_COMMON = {
     "DB_HOST": Variable.get("DB_HOST", default_var="localhost"),
     "DB_NAME": Variable.get("DB_NAME", default_var="meduza"),
