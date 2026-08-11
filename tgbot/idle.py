@@ -1,110 +1,66 @@
 import asyncio
 import html
-import logging
 import os
-
-import asyncpg
-from aiogram import Bot, Dispatcher
+ 
+import psycopg2
+from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
-from aiogram.types import Message
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("news_bot")
-
+ 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = int(os.environ["CHAT_ID"])
-POLL_INTERVAL_SECONDS = int(15)
-STATE_FILE = os.environ.get("STATE_FILE", "news_bot_last_id.txt")
-
-DB_CONFIG = dict(
-    host=os.environ.get("DB_HOST", "localhost"),
-    database=os.environ.get("DB_NAME", "meduza"),
-    user=os.environ.get("DB_USER", "postgres"),
-    password=os.environ.get("DB_PASSWORD", ""),
-)
-
-
-def load_last_id() -> int:
-    try:
-        with open(STATE_FILE, encoding="utf-8") as f:
-            return int(f.read().strip())
-    except (FileNotFoundError, ValueError):
-        return 0
-
-
-def save_last_id(value: int) -> None:
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        f.write(str(value))
-
-
-def format_message(row: asyncpg.Record) -> str:
-    data = dict(row)
-    title = html.escape(data.get("title") or "")
-    url = data.get("url") or ""
-    topic = data.get("topic")
-
-    text = f"🆕 <b>{title}</b>"
+ 
+DB_CONFIG = {
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "dbname": os.environ.get("DB_NAME", "meduza"),
+    "user": os.environ.get("DB_USER", "postgres"),
+    "password": os.environ.get("DB_PASSWORD", "1111"),
+}
+ 
+ 
+def format_message(title: str, url: str, topic: str | None) -> str:
+    text = f"🆕 <b>{html.escape(title or '')}</b>"
     if topic:
         text += f"\n🏷 {html.escape(str(topic))}"
     if url:
         text += f"\n{url}"
     return text
-
-
-async def poll_news(bot: Bot, pool: asyncpg.Pool) -> None:
-    last_id = load_last_id()
-
-    if last_id == 0:
-        # При первом запуске не шлём весь исторический архив — стартуем с текущего максимума.
-        async with pool.acquire() as conn:
-            last_id = await conn.fetchval("SELECT COALESCE(MAX(id), 0) FROM news")
-        save_last_id(last_id)
-        logger.info("Первый запуск: стартуем с id=%s, старые записи отправлены не будут", last_id)
-
-    try:
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT id, article_id, title, url, topic FROM news WHERE id > $1 ORDER BY id ASC",
-                last_id,
-            )
-        if len(rows)<1:
-            await bot.send_message(text='Новостей по мобилизации нет', chat_id=CHAT_ID)
-        for row in rows:
-            try:
-                await bot.send_message(format_message(row))
-                last_id = row["id"]
-                save_last_id(last_id)
-                logger.info("Отправлено id=%s: %s", row["id"], row["title"])
-            except Exception as e:
-                logger.error("Не удалось отправить id=%s: %r", row["id"], e)
-                break  # прервёмся, повторим попытку с этого же id на следующем цикле
-
-    except Exception as e:
-        logger.error("Ошибка при опросе БД: %r", e)
-    await asyncio.sleep(POLL_INTERVAL_SECONDS)
-
-
-async def main() -> None:
+ 
+ 
+async def send_pending() -> None:
+    conn = psycopg2.connect(**DB_CONFIG)
+    conn.autocommit = False
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher()
-
-    @dp.message(CommandStart())
-    async def start_handler(message: Message) -> None:
-        # Удобно, чтобы узнать chat_id для переменной окружения CHAT_ID
-        await message.answer(f"Этот чат: <code>{message.chat.id}</code>")
-
-    pool = await asyncpg.create_pool(**DB_CONFIG)
-
-    poll_task = asyncio.create_task(poll_news(bot, pool))
+ 
+    sent_count = 0
     try:
-        await dp.start_polling(bot)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, title, url, topic FROM news WHERE sent = false ORDER BY id ASC"
+            )
+            rows = cur.fetchall()
+ 
+        print(f"К отправке: {len(rows)}")
+ 
+        for news_id, title, url, topic in rows:
+            try:
+                await bot.send_message(CHAT_ID, format_message(title, url, topic))
+            except Exception as e:
+                print(f"[ОШИБКА] news_id={news_id}: {repr(e)}")
+                continue  # не отмечаем как отправленное — попробуем на следующем запуске DAG
+ 
+            with conn.cursor() as cur:
+                cur.execute("UPDATE news SET sent = true WHERE id = %s", (news_id,))
+            conn.commit()
+            sent_count += 1
+            print(f"news_id={news_id} -> отправлено")
+ 
     finally:
-        poll_task.cancel()
-        await pool.close()
         await bot.session.close()
-
-
+        conn.close()
+ 
+    print(f"Итого отправлено: {sent_count}")
+ 
+ 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(send_pending())
