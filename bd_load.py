@@ -14,8 +14,14 @@ conn = psycopg2.connect(
 
 cursor = conn.cursor()
 
-with open ('/home/admin/Documents/projects/grizli/meduza_news.json', encoding='utf-8') as f:
-    articles = json.load(f)
+with open('grizli/gazeta_news.json', encoding='utf-8') as f:
+    data1=json.load(f)
+with open('grizli/mediazona_news.json', encoding='utf-8') as f:
+    data2=json.load(f)
+with open('grizli/meduza_news.json', encoding='utf-8') as f:
+    data3=json.load(f)
+articles = data1 + data2 + data3
+
 
 for a in articles:
     rows.append((
@@ -23,7 +29,6 @@ for a in articles:
         a.get('url'),
         json.dumps(a, ensure_ascii=False)
     ))
-
 execute_values(cursor, """
     INSERT INTO articles (title, url, raw_json)
     VALUES %s
@@ -36,4 +41,4 @@ conn.commit()
 cursor.close()
 conn.close()
 
-print(f'Загруэено статей {len(rows)}')
+print(f'Загружено статей {len(rows)}')

@@ -5,7 +5,7 @@ from airflow.models import Variable
 from airflow.providers.standard.operators.bash import BashOperator
 
 LOCAL_TZ = pendulum.timezone("Europe/Moscow")
-PROJECT_DIR = "/home/admin/Documents/projects/grizli"
+PROJECT_DIR = "grizli/"
 PYTHON_BIN = f"/home/admin/Documents/projects/venv/bin/python3"
 ENV_COMMON = {
     "DB_HOST": Variable.get("DB_HOST", default_var="localhost"),
@@ -41,9 +41,23 @@ with DAG(
 
     parse_meduza=BashOperator(
         task_id="parse_meduza",
-        bash_command=f"{PYTHON_BIN} {PROJECT_DIR}/parcer.py",
+        bash_command=f"{PYTHON_BIN} {PROJECT_DIR}/parcer_meduza.py",
         env=ENV_COMMON,
         append_env=True,
+    )
+
+    parse_mediazona=BashOperator(
+            task_id="parse_mediazona",
+            bash_command=f"{PYTHON_BIN} {PROJECT_DIR}/parcer_mediazona.py",
+            env=ENV_COMMON,
+            append_env=True,
+    )
+
+    parse_gazeta=BashOperator(
+            task_id="parse_gazeta",
+            bash_command=f"{PYTHON_BIN} {PROJECT_DIR}/parcer_gazeta.py",
+            env=ENV_COMMON,
+            append_env=True,
     )
 
     db_load=BashOperator(
@@ -67,4 +81,4 @@ with DAG(
         append_env=True,
     )
 
-    parse_meduza >> db_load >> run_model >> notify_bot
+    [parse_meduza, parse_mediazona, parse_gazeta] >> db_load >> run_model >> notify_bot
