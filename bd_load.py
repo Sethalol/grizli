@@ -8,7 +8,7 @@ rows=[]
 conn = psycopg2.connect(
     host = 'localhost',
     database = 'meduza',
-    user = 'admin',
+    user = 'postgres',
     password = '1111'
 )
 
@@ -26,15 +26,13 @@ articles = data1 + data2 + data3
 for a in articles:
     rows.append((
         a.get('title'),
-        a.get('url'),
-        json.dumps(a, ensure_ascii=False)
+        a.get('href')
     ))
 execute_values(cursor, """
-    INSERT INTO articles (title, url, raw_json)
+    INSERT INTO articles (title, url)
     VALUES %s
     ON CONFLICT (url) DO UPDATE SET
-        title = EXCLUDED.title,
-        raw_json = EXCLUDED.raw_json
+        title = EXCLUDED.title;
 """, rows)
 
 conn.commit()
