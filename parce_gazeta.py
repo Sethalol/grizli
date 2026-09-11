@@ -7,10 +7,16 @@ import time
 import json
 from confluent_kafka import Producer
 
+
+def delivery_report(err, msg):
+    if err:
+        print(f"Delivery error: {err}")
+    else:
+        print(f"Delivered to: {msg.topic()} [{msg.partition()}]")
+
+
 config = {
     'bootstrap.servers': 'localhost:9092',
-    'group.id': 'mygroup',
-    'auto.offset.reset': 'earliest'
 }
 producer = Producer(config)
 
@@ -32,7 +38,7 @@ def parce_mediazona():
             title = title_elem.text.strip()
             href = title_elem.get_attribute("href")
             if title:
-                news.append({"title":title, "href":href})
+                news.append({"title":title, "url":href})
                 print(f"Ready: {title}")
         return news
     except Exception as e:
@@ -52,14 +58,16 @@ def clear_news(news: list[dict]):
 
 
 def send_message(topic, data):
-    producer.produce(topic=topic, value=data)
+    producer.produce(topic=topic, value=data, on_delivery=delivery_report)
+    producer.poll(0)
     producer.flush()
 
 
 if __name__ == "__main__":
     parcer = parce_mediazona()
     clear_news(parcer)
-    data = json.dump(parcer)
-    send_message('line',     data = json.dump(parcer)
-)
+    with open('gazeta_news.json', 'w', encoding='utf-8') as f:
+        json.dump(parcer, f, ensure_ascii=False, indent=2)
+    data = json.dumps(parcer, ensure_ascii=False).encode('utf-8')
+    send_message('line',data = data)
     print(f'sent data: {data}')

@@ -37,7 +37,7 @@ def check_title(title: str) -> bool:
         model = MODEL_NAME,
         messages = [
             {"role": "system", "content": INSTRUCTION},
-            {'role': 'system', 'content': title}
+            {'role': 'user', 'content': title}
         ],
         max_tokens=40,
         temperature=0,
