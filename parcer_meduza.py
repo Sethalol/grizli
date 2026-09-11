@@ -5,6 +5,20 @@ from selenium.webdriver.firefox.service import Service
 from webdriver_manager.firefox import GeckoDriverManager
 import time
 import json
+from confluent_kafka import Producer
+
+
+def delivery_report(err, msg):
+    if err:
+        print(f"Delivery error: {err}")
+    else:
+        print(f"Delivered to: {msg.topic()} [{msg.partition()}]")
+
+
+config = {
+    'bootstrap.servers': 'localhost:9092',
+}
+producer = Producer(config)
 
 
 def parce_meduza():
@@ -36,9 +50,16 @@ def parce_meduza():
     finally:
         driver.quit()
 
+def send_message(topic, data):
+    producer.produce(topic=topic, value=data, on_delivery=delivery_report)
+    producer.poll(0)
+    producer.flush()
+
 if __name__ == "__main__":
     news = parce_meduza()
-    with open("/home/admin/Documents/projects/grizli/meduza_news.json", "w", encoding="utf-8") as f:
+    with open('/home/admin/Documents/projects/grizli/meduza_news.json', 'w', encoding='utf-8') as f:
         json.dump(news, f, ensure_ascii=False, indent=2)
     
-    print(f"✅ Сохранено {len(news)} новостей")
+    data = json.dumps(news, ensure_ascii=False).encode('utf-8')
+    send_message('line', data)
+    print(f'sent data: {data}')

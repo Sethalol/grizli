@@ -5,7 +5,14 @@ from selenium.webdriver.firefox.service import Service
 from webdriver_manager.firefox import GeckoDriverManager
 import time
 import json
+from confluent_kafka import Producer
 
+config = {
+    'bootstrap.servers': 'localhost:9092',
+    'group.id': 'mygroup',
+    'auto.offset.reset': 'earliest'
+}
+producer = Producer(config)
 
 def parce_mediazona():
     options = Options()
@@ -43,9 +50,16 @@ def clear_news(news: list[dict]):
         dct["title"] = dct["title"][:dct["title"].index('\n')]
     print("Очищено")
 
+
+def send_message(topic, data):
+    producer.produce(topic=topic, value=data)
+    producer.flush()
+
+
 if __name__ == "__main__":
     parcer = parce_mediazona()
     clear_news(parcer)
-    with open("grizli/gazeta_news.json", "w", encoding="utf-8") as f:
-        json.dump(parcer, f, ensure_ascii=False, indent=2)
-    print(f"Сохранено {len(parcer)} Новостей")
+    data = json.dump(parcer)
+    send_message('line',     data = json.dump(parcer)
+)
+    print(f'sent data: {data}')
