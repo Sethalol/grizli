@@ -59,7 +59,6 @@ if __name__ == "__main__":
     news = parce_meduza()
     with open('/home/admin/Documents/projects/grizli/meduza_news.json', 'w', encoding='utf-8') as f:
         json.dump(news, f, ensure_ascii=False, indent=2)
-    
     data = json.dumps(news, ensure_ascii=False).encode('utf-8')
     send_message('line', data)
     print(f'sent data: {data}')
