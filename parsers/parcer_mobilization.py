@@ -1,11 +1,5 @@
-from selenium.webdriver.common.by import By
-from selenium.webdriver.firefox.options import Options 
-from selenium import webdriver
-from selenium.webdriver.firefox.service import Service
-from webdriver_manager.firefox import GeckoDriverManager
 import trafilatura
 from trafilatura.settings import use_config
-
 import time
 import json
 from confluent_kafka import Producer, Consumer, KafkaError, KafkaException
@@ -63,11 +57,12 @@ def parce_mob(url):
         )
         return text
  
-    except Exception:
+    except Exception as e:
+        print(f'[ERROR]: {repr(e)}')
         return None
 
 
-def send_to_tg(producer, text):
+def send_to_tg(producer: Producer, text):
     result = {"text":text}
     payload = json.dumps(result, ensure_ascii=False).encode('utf-8')
     producer.produce(
@@ -77,9 +72,9 @@ def send_to_tg(producer, text):
     )
     producer.poll(0)
 
-def consume_from_topic():
+def main():
     consumer = Consumer(CONSUMER_CONFIG)
-    consumer.subscribe(SOURCE_TOPIC)
+    consumer.subscribe([SOURCE_TOPIC])
     producer = Producer(PRODUCER_CONFIG)
     IDLE_TIMEOUT=5.0
     empty_since=None
@@ -124,14 +119,16 @@ def consume_from_topic():
                 else:
                     print(f'{article} -> Rejected')
 
-                producer.flush()
-                consumer.commit(asynchronous=False)
+            producer.flush()
+            consumer.commit(asynchronous=False)
 
 
 
             
-    except KeyboardInterrupt():
+    except KeyboardInterrupt:
         print('Остановка консьюмера...')
     finally:
         consumer.close()
 
+if __name__ == "__main__":
+    main()

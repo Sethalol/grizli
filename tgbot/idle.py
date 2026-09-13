@@ -1,65 +1,102 @@
 import asyncio
 import html
+import json
 import os
+import time
  
-import psycopg2
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from confluent_kafka import Consumer, KafkaError, KafkaException
  
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = int(os.environ["CHAT_ID"])
+CHAT_ID = int(os.environ["CHAT_ID"])  # id чата/канала, куда шлём новости
  
-DB_CONFIG = {
-    "host": os.environ.get("DB_HOST", "localhost"),
-    "dbname": os.environ.get("DB_NAME", "meduza"),
-    "user": os.environ.get("DB_USER", "postgres"),
-    "password": os.environ.get("DB_PASSWORD", "1111"),
+SOURCE_TOPIC = "tg_bot"
+IDLE_TIMEOUT = 5.0
+ 
+CONSUMER_CONFIG = {
+    "bootstrap.servers": os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+    "group.id": os.environ.get("KAFKA_GROUP_ID", "tg-bot-broadcaster"),
+    "enable.auto.commit": False,
+    "auto.offset.reset": "earliest",
 }
  
  
-def format_message(title: str, url: str, topic: str | None) -> str:
-    text = f"🆕 <b>{html.escape(title or '')}</b>"
-    if topic:
-        text += f"\n🏷 {html.escape(str(topic))}"
-    if url:
-        text += f"\n{url}"
+def format_message(text: str) -> str:
+    return f"🆕 {html.escape(text)}"
+ 
+ 
+def parse_message(raw: bytes):
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        print(f"[ОШИБКА ДЕКОДА] {repr(e)}")
+        return None
+ 
+    if not isinstance(payload, dict):
+        print(f"[ОШИБКА ПАРСИНГА] Неизвестный тип данных: {type(payload)}")
+        return None
+ 
+    text = payload.get("text")
+    if not text:
+        return None
     return text
  
  
 async def send_pending() -> None:
-    conn = psycopg2.connect(**DB_CONFIG)
-    conn.autocommit = False
+    consumer = Consumer(CONSUMER_CONFIG)
+    consumer.subscribe([SOURCE_TOPIC])
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
  
     sent_count = 0
+    empty_since = None
+ 
     try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, title, url, topic FROM news WHERE sent = false ORDER BY id ASC"
-            )
-            rows = cur.fetchall()
+        while True:
+            msg = consumer.poll(1.0)
  
-        print(f"К отправке: {len(rows)}")
+            if msg is None:
+                if empty_since is None:
+                    empty_since = time.monotonic()
+                elif time.monotonic() - empty_since >= IDLE_TIMEOUT:
+                    print("Новых сообщений нет, завершаем работу.")
+                    break
+                continue
  
-        for news_id, title, url, topic in rows:
+            empty_since = None
+ 
+            if msg.error():
+                if msg.error().code() == KafkaError._PARTITION_EOF:
+                    continue
+                raise KafkaException(msg.error())
+ 
+            text = parse_message(msg.value())
+ 
+            if text is None:
+                print("[ПРОПУЩЕНО] пустое или некорректное сообщение")
+                consumer.commit(asynchronous=False)
+                continue
+ 
             try:
-                await bot.send_message(CHAT_ID, format_message(title, url, topic))
+                await bot.send_message(CHAT_ID, format_message(text))
+                sent_count += 1
+                print("Новость отправлена")
             except Exception as e:
-                print(f"[ОШИБКА] news_id={news_id}: {repr(e)}")
-                continue  # не отмечаем как отправленное — попробуем на следующем запуске DAG
+                print(f"[ОШИБКА ОТПРАВКИ] {repr(e)}")
+                # не коммитим офсет — попробуем отправить эту же новость на следующем запуске
+                continue
  
-            with conn.cursor() as cur:
-                cur.execute("UPDATE news SET sent = true WHERE id = %s", (news_id,))
-            conn.commit()
-            sent_count += 1
-            print(f"news_id={news_id} -> отправлено")
+            consumer.commit(asynchronous=False)
+ 
         if sent_count == 0:
-            await bot.send_message(CHAT_ID, text='Новостей по мобилизации нет!')
-
+            await bot.send_message(CHAT_ID, "Новостей по мобилизации нет!")
+ 
     finally:
         await bot.session.close()
-        conn.close()
+        consumer.close()
  
     print(f"Итого отправлено: {sent_count}")
  
