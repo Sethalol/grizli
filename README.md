@@ -1,129 +1,119 @@
-# grizli — мониторинг мобилизационных новостей «Медузы»
+# grizli
 
-Airflow-пайплайн, который раз в сутки парсит ленту «Медузы»,
-прогоняет заголовки через LLM-фильтр по теме мобилизации в России
-и рассылает релевантные новости в Telegram.
+Пайплайн для поиска новостей о мобилизации: парсит заголовки с новостных сайтов, фильтрует их через LLM, вытаскивает полный текст отобранных статей, прогоняет текст через второго агента и отправляет результат в Telegram.
+
+Оркестрация — Airflow, передача данных между этапами — Kafka.
 
 ## Как это работает
 
 ```
-parse_meduza → load_bd → run_model → notify_bot
+parcer_meduza.py  ─┐
+parcer_mediazona.py ├─→ [line] ─→ model.py ─→ [catmodel] ─→ parcer_mobilization.py ─┐
+parce_gazeta.py   ─┘         (LLM: тема?)                    (trafilatura: текст)   │
+                                                                                     ↓
+                            idle.py ←─ [tg_bot] ←─ agent_check_topic.py ←────────── [tg]
+                          (Telegram)                  (LLM: обработка текста)
 ```
 
-| Таск | Скрипт | Что делает |
+| Этап | Скрипт | Читает | Пишет |
+|---|---|---|---|
+| Парсинг заголовков | `parsers/parcer_meduza.py`, `parsers/parcer_mediazona.py`, `parsers/parce_gazeta.py` | — | `line` |
+| Фильтр по теме | `agents/model.py` | `line` | `catmodel` |
+| Извлечение текста | `parsers/parcer_mobilization.py` | `catmodel` | `tg` |
+| Обработка текста | `agents/agent_check_topic.py` | `tg` | `tg_bot` |
+| Отправка | `tgbot/idle.py` | `tg_bot` | Telegram |
+
+Все консьюмеры работают в режиме «до опустошения топика»: если сообщений нет `IDLE_TIMEOUT` (5 сек), скрипт завершается. Это позволяет запускать их как разовые задачи в Airflow, а не как демоны.
+
+## Компоненты
+
+### Парсеры заголовков
+Selenium + headless Firefox, `webdriver_manager` сам подтягивает geckodriver. Каждый парсер берёт 10 верхних новостей с главной, собирает `[{"title": ..., "url": ...}]`, дублирует в локальный JSON и отправляет в топик `line`.
+
+Источники: [meduza.io](https://meduza.io/), [zona.media](https://zona.media/news), [novayagazeta.eu](https://novayagazeta.eu/news).
+
+### model.py — фильтр заголовков
+Qwen (`qwen3.5-flash` через DashScope OpenAI-совместимый endpoint) отвечает `true`/`false` на вопрос, относится ли заголовок к теме. Промпт лежит в файле `grizli/instruction`. Прошедшие заголовки уходят в `catmodel` с добавленным полем `topic: mobilization`, ключ сообщения — url.
+
+### parcer_mobilization.py — извлечение текста
+`trafilatura` скачивает страницу по url и достаёт основной текст (без комментариев, меню и футера). Результат `{"text": ...}` идёт в топик `tg`.
+
+### agent_check_topic.py — обработка текста
+Второй проход LLM, промпт в `grizli/instruction_for_text`. Результат в `tg_bot`.
+
+### idle.py — Telegram-бот
+aiogram, отправляет каждое сообщение в `CHAT_ID` с префиксом 🆕. Офсет коммитится только после успешной отправки, так что при падении Telegram новость переотправится на следующем запуске. Если за весь прогон ничего не отправлено, шлёт «Новостей по мобилизации нет!».
+
+### meduza_pipeline_dag.py
+DAG `mobilization_pipeline`, расписание `05 18 * * *` (Europe/Moscow), 2 ретрая с паузой 5 минут. Три парсера идут параллельно, дальше цепочка последовательная.
+
+## Установка
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install selenium webdriver-manager trafilatura confluent-kafka openai aiogram apache-airflow
+```
+
+Нужны Firefox (для Selenium) и запущенная Kafka на `localhost:9092`.
+
+Создать топики:
+```bash
+for t in line catmodel tg tg_bot; do
+  kafka-topics.sh --create --topic $t --bootstrap-server localhost:9092 \
+    --partitions 1 --replication-factor 1
+done
+```
+
+## Переменные окружения
+
+| Переменная | Где нужна | Описание |
 |---|---|---|
-| `parse_meduza` | `parcer.py` | Открывает Медузу через Selenium (Firefox + `webdriver_manager`), собирает свежие заголовки/ссылки, сохраняет в `meduza_news.json` |
-| `load_bd` | `bd_load.py` | Читает `meduza_news.json`, апсертит статьи в таблицу `articles` (Postgres, конфликт по `url`) |
-| `run_model` | `model.py` | Прогоняет заголовки через LLM по системному промпту из файла `instruction`, размечает тему/важность и пишет результат в таблицу `news` |
-| `notify_bot` | `tgbot/idle.py` | Забирает из `news` всё с `sent = false`, шлёт в Telegram-чат, помечает отправленным |
+| `KAFKA_BOOTSTRAP_SERVERS` | везде | адрес брокера, по умолчанию `localhost:9092` |
+| `DASHSCOPE_API_KEY` | `model.py`, `agent_check_topic.py` | ключ DashScope |
+| `BOT_TOKEN` | `idle.py` | токен Telegram-бота |
+| `CHAT_ID` | `idle.py` | id чата или канала |
 
-DAG: `meduza_mobilization_pipeline`, расписание `05 18 * * *` (18:05 по Europe/Moscow), `catchup=False`, 2 ретрая с интервалом 5 минут.
-
-## Логика фильтрации
-
-Промпт в `instruction` задаёт агенту-классификатору чёткие критерии:
-
-- **Включаем**: мобилизация/призыв/повестки, изменения в законе о воинской обязанности, ограничения на выезд, электронный реестр военнообязанных, статусы в розыске, альтернативная служба, выплаты — но только если заголовок содержит новостной повод (глагол в прошедшем/будущем времени, конкретная дата), а не общую аналитику.
-- **Исключаем**: боевые действия на фронте, геополитику, общую экономику, бытовую криминальную хронику, соцподдержку военных, праздничные поздравления.
-- Прошедшим фильтр присваивается важность `HIGH` / `MEDIUM` / `LOW`.
-- Модель отвечает одним словом `True`/`False`.
-
-## Структура проекта
-
-```
-grizli/
-├── parcer.py             # парсинг Медузы (Selenium)
-├── bd_load.py             # загрузка JSON в Postgres (articles)
-├── model.py                # LLM-классификация по instruction (OpenRouter)
-├── instruction              # системный промпт для model.py
-├── meduza_news.json          # промежуточный дамп статей (генерируется)
-├── api                        # (пусто — зарезервировано)
-├── tgbot/
-│   └── idle.py                 # рассылка в Telegram (aiogram)
-├── meduza_pipeline_dag.py        # DAG для Airflow
-└── venv/                          # виртуальное окружение проекта
+Airflow берёт `DASHSCOPE_API_KEY`, `BOT_TOKEN` и `CHAT_ID` из Variables:
+```bash
+airflow variables set DASHSCOPE_API_KEY "..."
+airflow variables set BOT_TOKEN "..."
+airflow variables set CHAT_ID "..."
 ```
 
-DAG-файл кладётся в `~/airflow/dags/`, сам код проекта — в отдельном
-каталоге и запускается через собственный venv (не тот, где стоит Airflow).
+## Файлы с промптами
 
-## Требования
+- `grizli/instruction` — инструкция для фильтра заголовков, модель должна отвечать `true` или `false`
+- `grizli/instruction_for_text` — инструкция для обработки полного текста
 
-Два разных окружения:
+Оба читаются на старте скрипта, без них будет `FileNotFoundError`.
 
-**Airflow venv** (`/home/admin/Documents/projects/venv`):
-- `apache-airflow`
-
-**venv проекта** (`/home/admin/Documents/projects/grizli/venv`) — именно из него запускаются все таски:
-- `selenium`
-- `webdriver-manager`
-- `psycopg2`
-- `aiogram`
-- клиент для OpenRouter (`openai`-совместимый SDK или `requests`)
+## Ручной запуск
 
 ```bash
-cd grizli
-python -m venv venv
-venv/bin/pip install selenium webdriver-manager psycopg2-binary aiogram openai
+python parsers/parcer_meduza.py
+python agents/model.py
+python parsers/parcer_mobilization.py
+python agents/agent_check_topic.py
+python tgbot/idle.py
 ```
 
-Рекомендуется закрепить версии в `requirements.txt` и поставить их одной командой,
-чтобы не ловить `ModuleNotFoundError` по одному при каждом прогоне DAG.
+## Известные проблемы
 
-## Postgres
+Несколько мест, которые стоит поправить — они ломают пайплайн на текущем коде:
 
-Нужна база (по умолчанию `meduza`) минимум с двумя таблицами:
+1. **`parcer_mobilization.py`, `CONSUMER_CONFIG`.** Ключ записан как `auto_offset_reset`, а confluent-kafka ждёт `auto.offset.reset` (через точки). Плюс нет `group.id` — без него `subscribe()` упадёт. Сравните с конфигом в `model.py`, там всё правильно.
 
-```sql
-CREATE TABLE articles (
-    id       SERIAL PRIMARY KEY,
-    title    TEXT,
-    url      TEXT UNIQUE,
-    raw_json JSONB
-);
+2. **`agent_check_topic.py`, функция `transform`.** Возвращает `payload.get("text")`, то есть строку, а `main()` дальше итерируется по ней как по списку словарей и вызывает `article.get("text")` на каждом символе. Нужно либо возвращать `[payload]`, либо работать со строкой напрямую.
 
-CREATE TABLE news (
-    id    SERIAL PRIMARY KEY,
-    title TEXT,
-    url   TEXT,
-    topic TEXT,
-    sent  BOOLEAN DEFAULT false
-);
-```
+3. **`agent_check_topic.py`, `CONSUMER_CONFIG`.** Тоже нет `group.id`.
 
-(Точную схему `news`, которую пишет `model.py`, стоит свериться с самим скриптом —
-он не входит в этот набор файлов.)
+4. **Имя файла газеты.** DAG вызывает `parcer_gazeta.py`, а файл называется `parce_gazeta.py`.
 
-## Переменные окружения / Airflow Variables
+5. **Относительные пути в DAG.** `PROJECT_PARSER_DIR = "grizli/parsers"` резолвится от текущей директории воркера. Надёжнее указать абсолютный путь, как уже сделано для `PYTHON_BIN`.
 
-DAG читает их через `Variable.get(..., default_var=...)`. **Дефолты в коде — временная затычка,
-их нужно убрать и задать значения через Airflow UI (Admin → Variables) или `.env`, не хранить в репозитории:**
+6. **Пути сохранения JSON.** В `parcer_meduza.py` абсолютный путь, в остальных двух — относительный. Файлы будут оказываться в разных местах.
 
-| Переменная | Назначение |
-|---|---|
-| `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | подключение к Postgres |
-| `OPENROUTER_API_KEY`, `OPENROUTER_PROXY` | доступ к LLM через OpenRouter |
-| `BOT_TOKEN`, `CHAT_ID` | Telegram-бот и чат для рассылки |
+7. **`parce_gazeta.py`.** Функция называется `parce_mediazona` (копипаста), а `clear_news` делает `dct["title"].index('\n')` без проверки — если в заголовке не окажется переноса строки, будет `ValueError` на всём батче.
 
-## Запуск / тест
-
-```bash
-# ручной прогон конкретной даты без создания записи в шедулере
-airflow dags test meduza_mobilization_pipeline 2026-08-11
-
-# продовый режим — просто включить DAG в Airflow UI/CLI
-airflow dags unpause meduza_mobilization_pipeline
-```
-
-## Известные особенности / на что обратить внимание
-
-- Все скрипты в `PROJECT_DIR` используют **относительные пути** к файлам
-  (`meduza_news.json`, `instruction`) — при запуске через `BashOperator`
-  рабочая директория подпроцесса не гарантированно совпадает с `PROJECT_DIR`.
-  Надёжнее переписать чтение/запись на абсолютные пути или на путь
-  относительно `os.path.dirname(os.path.abspath(__file__))`.
-- Секреты в `meduza_pipeline_dag.py` сейчас захардкожены как `default_var` —
-  нужно вынести их в Airflow Variables/Secrets backend и **ротировать**
-  токен бота и ключ OpenRouter, если файл когда-либо попадал в публичный репозиторий.
-- `parcer.py` и `model.py` не входили в проверяемый набор файлов — их стоит
-  задокументировать отдельно (входные/выходные форматы, используемая модель OpenRouter).
+8. **`msg.error() == KafkaError._PARTITION_EOF`** в `agent_check_topic.py` — сравнивается объект ошибки с кодом. В остальных файлах правильно: `msg.error().code() == ...`.
