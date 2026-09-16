@@ -53,7 +53,7 @@ with DAG(
 
     parse_gazeta=BashOperator(
             task_id="parse_gazeta",
-            bash_command=f"{PYTHON_BIN} {PROJECT_PARSER_DIR}/parcer_gazeta.py",
+            bash_command=f"{PYTHON_BIN} {PROJECT_PARSER_DIR}/parce_gazeta.py",
             env=ENV_COMMON,
             append_env=True,
     )

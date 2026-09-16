@@ -6,7 +6,7 @@ from confluent_kafka import Producer, Consumer, KafkaError, KafkaException
 
 CONSUMER_CONFIG={
     "bootstrap.servers": 'localhost:9092',
-    "auto_offset_reset": 'earliest',
+    "auto.offset.reset": 'earliest',
 }
 PRODUCER_CONFIG={"bootstrap.servers": 'localhost:9092'}
 SOURCE_TOPIC='catmodel'

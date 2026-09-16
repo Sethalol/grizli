@@ -50,7 +50,7 @@ def transform(raw: bytes):
 
 
     if isinstance(payload, dict) and "text" in payload:
-        return payload.get("text", [])
+        return list(payload.get("text", []))
     else:
         return []
 
@@ -86,7 +86,7 @@ def main():
                 continue
 
             if msg.error():
-                if msg.error() == KafkaError._PARTITION_EOF:
+                if msg.error().code() == KafkaError._PARTITION_EOF:
                     continue
                 raise KafkaException(msg.error())
 
