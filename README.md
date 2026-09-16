@@ -96,24 +96,3 @@ python agents/model.py
 python parsers/parcer_mobilization.py
 python agents/agent_check_topic.py
 python tgbot/idle.py
-```
-
-## Известные проблемы
-
-Несколько мест, которые стоит поправить — они ломают пайплайн на текущем коде:
-
-1. **`parcer_mobilization.py`, `CONSUMER_CONFIG`.** Ключ записан как `auto_offset_reset`, а confluent-kafka ждёт `auto.offset.reset` (через точки). Плюс нет `group.id` — без него `subscribe()` упадёт. Сравните с конфигом в `model.py`, там всё правильно.
-
-2. **`agent_check_topic.py`, функция `transform`.** Возвращает `payload.get("text")`, то есть строку, а `main()` дальше итерируется по ней как по списку словарей и вызывает `article.get("text")` на каждом символе. Нужно либо возвращать `[payload]`, либо работать со строкой напрямую.
-
-3. **`agent_check_topic.py`, `CONSUMER_CONFIG`.** Тоже нет `group.id`.
-
-4. **Имя файла газеты.** DAG вызывает `parcer_gazeta.py`, а файл называется `parce_gazeta.py`.
-
-5. **Относительные пути в DAG.** `PROJECT_PARSER_DIR = "grizli/parsers"` резолвится от текущей директории воркера. Надёжнее указать абсолютный путь, как уже сделано для `PYTHON_BIN`.
-
-6. **Пути сохранения JSON.** В `parcer_meduza.py` абсолютный путь, в остальных двух — относительный. Файлы будут оказываться в разных местах.
-
-7. **`parce_gazeta.py`.** Функция называется `parce_mediazona` (копипаста), а `clear_news` делает `dct["title"].index('\n')` без проверки — если в заголовке не окажется переноса строки, будет `ValueError` на всём батче.
-
-8. **`msg.error() == KafkaError._PARTITION_EOF`** в `agent_check_topic.py` — сравнивается объект ошибки с кодом. В остальных файлах правильно: `msg.error().code() == ...`.
