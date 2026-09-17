@@ -3,6 +3,9 @@ import json
 from openai import OpenAI
 from confluent_kafka import Consumer, Producer, KafkaError, KafkaException
 import time
+from dotenv import load_dotenv
+load_dotenv()
+
 
 client = OpenAI(
     api_key=os.environ.get("DASHSCOPE_API_KEY"),
@@ -10,7 +13,7 @@ client = OpenAI(
 )
 
 MODEL_NAME = "qwen3.5-flash"
-with open("/home/admin/Documents/projects/grizli/instruction", encoding='utf-8') as f:
+with open("/home/admin/Documents/projects/grizli/instructions/instruction.txt", encoding='utf-8') as f:
     INSTRUCTION = f.read()
 TOPIC_VALUE = 'mobilization'
 SOURCE_TOPIC="line"

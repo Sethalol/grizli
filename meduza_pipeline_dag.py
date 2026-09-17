@@ -1,20 +1,21 @@
 from datetime import timedelta
 import pendulum
+import os
 from airflow import DAG
 from airflow.models import Variable
 from airflow.providers.standard.operators.bash import BashOperator
 
 LOCAL_TZ = pendulum.timezone("Europe/Moscow")
-PROJECT_PARSER_DIR = "grizli/parsers"
-PROJECT_AGENT_DIR = 'grizli/agents'
-PROJECT_DIR = 'grizli/'
+PROJECT_DIR = '/home/admin/Documents/projects/grizli/'
+PROJECT_PARSER_DIR = PROJECT_DIR+"parsers"
+PROJECT_AGENT_DIR = PROJECT_DIR+'agents'
 PYTHON_BIN = f"/home/admin/Documents/projects/venv/bin/python3"
 ENV_COMMON = {
     "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092"
 }
 ENV_MODEL = {
     **ENV_COMMON,
-    "DASHSCOPE_API_KEY": Variable.get("DASHSCOPE_API_KEY", default_var=""),
+    "DASHSCOPE_API_KEY": os.getenv("DASHSCOPE_API_KEY"),
 }
 ENV_BOT = {
     **ENV_COMMON,
@@ -30,7 +31,7 @@ default_args = {
 with DAG(
     dag_id= "mobilization_pipeline",
     description="Парсинг новостных сайтов",
-    schedule="05 18 * * *",
+    schedule=None, #"05 18 * * *",
     start_date=pendulum.datetime(2026, 8, 11, tz=LOCAL_TZ),
     catchup=False,
     default_args=default_args,

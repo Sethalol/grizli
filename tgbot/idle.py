@@ -9,8 +9,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from confluent_kafka import Consumer, KafkaError, KafkaException
  
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = int(os.environ["CHAT_ID"])  # id чата/канала, куда шлём новости
+BOT_TOKEN = os.environ["BOT_TOKEN"]  #BOT_TOKEN
+CHAT_ID = int(os.environ["CHAT_ID"])  # id чата/канала, куда шлём новости  CHAT_ID
  
 SOURCE_TOPIC = "tg_bot"
 IDLE_TIMEOUT = 5.0

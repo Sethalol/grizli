@@ -3,12 +3,14 @@ import os
 import time
 from openai import OpenAI
 from confluent_kafka import Consumer, Producer, KafkaError, KafkaException
+from dotenv import load_dotenv
+load_dotenv()
 
 client = OpenAI(
-    api_key=os.environ.get('DASHSCOPE_API_KEY'),
+    api_key=os.environ.get('DASHSCOPE_API_KEY'), #DASHSCOPE_API_KEY
     base_url='https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
 )
-with open('grizli/instruction_for_text', 'r', encoding='utf-8') as f:
+with open('/home/admin/Documents/projects/grizli/agents/agent_check_topic.py', 'r', encoding='utf-8') as f:
     INSTRUCTION=f.read()
 
 MODEL_NAME = "qwen3.5-flash"
